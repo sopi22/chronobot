@@ -83,8 +83,8 @@ Bot:  ✅ 'call mom' at 13:00 (Asia/Manila)
 
 You:  154
 Bot:  ❓ '154' could mean 01:54 (AM) or 13:54 (PM) -- please specify am/pm or use 24-hour format.
-        • AM: 01:54
-        • PM: 13:54
+  • AM: 01:54
+  • PM: 13:54
 
 You:  1354pm
 Bot:  ❌ '1354pm': hour 13 is not valid with am/pm (must be 1-12)
