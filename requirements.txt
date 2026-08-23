@@ -1,0 +1,7 @@
+# Runtime dependencies. See README "Dependencies & licenses" for the full
+# license-compatibility check against this project's MIT license.
+
+# LGPL-3.0. Used as an unmodified library dependency (plain `pip install` +
+# `import`, no vendored/modified source) -- LGPL explicitly permits this
+# without requiring the *using* application to also be LGPL. Compatible.
+python-telegram-bot==21.6

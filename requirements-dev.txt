@@ -1,0 +1,3 @@
+# Test-only tooling -- not distributed as part of the running application.
+-r requirements.txt
+pytest==9.1.1
