@@ -5,3 +5,8 @@
 # `import`, no vendored/modified source) -- LGPL explicitly permits this
 # without requiring the *using* application to also be LGPL. Compatible.
 python-telegram-bot==21.6
+
+# BSD-3-Clause. Permissive, MIT-compatible. Only used by api/index.py, the
+# Vercel serverless webhook entrypoint -- not needed for local/Docker
+# long-polling (bot/bot.py), but harmless to install either way.
+flask==3.1.3

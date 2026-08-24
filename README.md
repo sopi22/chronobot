@@ -24,7 +24,7 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 - Recurring-event DST safety: occurrences are resolved against real IANA timezone data and flagged, never silently shifted, if a specific date's local time is nonexistent (spring-forward) or ambiguous (fall-back).
 - On ambiguity, the bot asks — with the concrete candidate times, not an open-ended "please clarify."
 - Description can go before or after the time — `call mom at 154` and `154 call mom` both work. Only decides *where the time is*, never guesses what it means.
-- 72 passing unit tests, written before the implementation.
+- 79 passing unit tests, written before the implementation.
 
 ## Setup & run
 
@@ -72,7 +72,26 @@ Installs `requirements.txt`, copies `chrono_engine/` and `bot/`, runs `python -m
 
 ### Where this should actually run
 
-For local development and testing, this WSL machine is fine. For a bot you can actually rely on being reachable, it needs a host that's on all the time — this machine sleeping or shutting down takes the bot offline with no auto-recovery. A small VPS (~$5/mo), a Raspberry Pi at home (long-polling needs no inbound ports, so a Pi behind home NAT works fine), or a free-tier PaaS (Railway, Fly.io, Render) are all reasonable choices — moving there is just running the same `python -m bot.bot` (or the Docker image) with the same `.env`, not a rewrite.
+Option A/B above (long-polling) is for local development and testing only. This WSL machine sleeping, or Docker Desktop not running, takes the bot fully offline with no auto-recovery — confirmed the hard way on 2026-08-24, when a WSL restart silently killed the container for hours with no crash trace, and every message sent in that window (including `/about`) got no reply at all.
+
+For an always-on bot that doesn't depend on this laptop being on, see **Deploying on Vercel** below — a genuinely free, no-credit-card host, using a webhook instead of long-polling so there's no process that needs to stay running on your own machine.
+
+### Deploying on Vercel (free, always-on, no credit card)
+
+This uses `api/index.py` — a small Flask function, separate from `bot/bot.py` — because Vercel's free tier only runs your code in response to an incoming HTTP request (no long-running process for long-polling to live in). It's not a rewrite of the parsing logic: `api/index.py` imports and reuses the exact same `chrono_engine` and the same tested helper functions from `bot/bot.py`, just receives updates via Telegram's webhook protocol instead of `getUpdates`.
+
+**One-time setup (needs a human — I can't create accounts or click through a browser login):**
+
+1. Go to [vercel.com](https://vercel.com) and sign up with **"Continue with GitHub"** — no credit card anywhere in this flow.
+2. **Import this repo**: New Project → pick `sopi22/chronobot` from your GitHub repos → Deploy. Vercel auto-detects the Python function in `api/`.
+3. In the project's **Settings → Environment Variables**, add:
+   - `TELEGRAM_BOT_TOKEN` — same value as your local `.env`.
+   - `DEFAULT_TIMEZONE` — same value as your local `.env` (e.g. `Asia/Manila`).
+   - `WEBHOOK_SECRET_TOKEN` — same value as your local `.env`'s `WEBHOOK_SECRET_TOKEN` (generate one first if you haven't — see `.env.example`).
+4. Redeploy (Vercel does this automatically after saving env vars, or click **Redeploy**).
+5. Copy the deployment's URL (looks like `https://chronobot-<something>.vercel.app`) and tell me — I'll register it with Telegram (a one-time `setWebhook` API call) without needing the token pasted into chat, since I already have it locally in `.env`.
+
+After that, the bot responds to messages the moment Vercel receives them from Telegram — no laptop, no Docker, no polling loop required. If you ever want to go back to local testing, Telegram only allows one active mode (webhook *or* long-polling) at a time — deleting the webhook (`deleteWebhook`) switches back to `python -m bot.bot` working again, and re-registering it switches back to Vercel.
 
 ## Example conversation
 
@@ -104,6 +123,7 @@ Checked for MIT compatibility, not assumed:
 | Dependency | License | Compatible? |
 |---|---|---|
 | `python-telegram-bot` 21.6 | LGPL-3.0 | Yes — used as an unmodified library dependency (`pip install` + `import`, no vendored/modified source). LGPL explicitly permits this without requiring the using application to also be LGPL. |
+| `flask` 3.1.3 | BSD-3-Clause | Yes — permissive, MIT-compatible. Only used by `api/index.py` (Vercel webhook entrypoint). |
 | `pytest` | MIT | Yes — dev/test-only, not distributed as part of the running application either way. |
 | `python:3.12-slim` (Docker base image) | Debian/various (base OS) | Not a licensing concern — used only as a runtime environment, not incorporated into this project's source. |
 
