@@ -23,7 +23,8 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 - Handles 12h and 24h formats, compact digits (`1354`, `154pm`), spelled-out times (`noon`, `half past two`), maritime `LT`/`Z`/`UTC` markers, locale variants (`13.54`, `13h54`), and full-width/Devanagari Unicode digits.
 - Recurring-event DST safety: occurrences are resolved against real IANA timezone data and flagged, never silently shifted, if a specific date's local time is nonexistent (spring-forward) or ambiguous (fall-back).
 - On ambiguity, the bot asks — with the concrete candidate times, not an open-ended "please clarify."
-- 67 passing unit tests, written before the implementation.
+- Description can go before or after the time — `call mom at 154` and `154 call mom` both work. Only decides *where the time is*, never guesses what it means.
+- 72 passing unit tests, written before the implementation.
 
 ## Setup & run
 
@@ -91,6 +92,9 @@ Bot:  ❌ '1354pm': hour 13 is not valid with am/pm (must be 1-12)
 
 You:  half past two pm
 Bot:  ✅ 'That' at 14:30 (Asia/Manila)
+
+You:  5pm call mom
+Bot:  ✅ 'call mom' at 17:00 (Asia/Manila)
 ```
 
 ## Dependencies & licenses

@@ -23,6 +23,31 @@ class TestSplitDescriptionAndTime:
         assert desc == "call mom"
         assert time_part == "1pm"
 
+    def test_time_first_no_at(self):
+        desc, time_part = _split_description_and_time("10:24am remind me to call Sophie")
+        assert desc == "remind me to call Sophie"
+        assert time_part == "10:24am"
+
+    def test_time_first_bare_ambiguous(self):
+        desc, time_part = _split_description_and_time("154 remind me to call mom")
+        assert desc == "remind me to call mom"
+        assert time_part == "154"
+
+    def test_time_first_multiword_lexicon(self):
+        desc, time_part = _split_description_and_time("half past two pm call mom")
+        assert desc == "call mom"
+        assert time_part == "half past two pm"
+
+    def test_no_time_anywhere_falls_back_to_whole_text(self):
+        desc, time_part = _split_description_and_time("how are you doing today")
+        assert desc is None
+        assert time_part == "how are you doing today"
+
+    def test_at_still_wins_over_leading_time_heuristic(self):
+        desc, time_part = _split_description_and_time("call mom at 5pm")
+        assert desc == "call mom"
+        assert time_part == "5pm"
+
 
 class TestFormatReply:
     def test_normalized_reply(self):

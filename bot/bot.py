@@ -30,7 +30,8 @@ ABOUT_TEXT = (
 
 START_TEXT = (
     "Tell me a time, e.g. '1pm', '13:54', 'half past two pm', 'quarter to five', 'noon'.\n\n"
-    "Add a description before ' at ' if you like: 'call mom at 154'.\n\n"
+    "Add a description before or after the time -- 'call mom at 154' or "
+    "'154 call mom' both work.\n\n"
     "If your time is ambiguous (like '5' or '154' with no am/pm), I'll ask -- "
     "I never guess. /about for details."
 )
@@ -50,17 +51,38 @@ def _load_dotenv(path: str = ".env") -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
-def _split_description_and_time(text: str) -> tuple[str | None, str]:
-    """Purely syntactic split on the last ' at ' -- not intent extraction,
-    not LLM-based. If absent, the whole message is treated as the time
-    expression."""
+def _split_description_and_time(text: str, *, default_tz: str = "UTC") -> tuple[str | None, str]:
+    """Find the time expression in a message and treat the rest as description.
+
+    Two supported orders, tried in this priority:
+      1. Explicit: "description at TIME" -- split on the last literal
+         ' at ', if present. Always wins; purely syntactic, no time parsing
+         needed to find this split.
+      2. Forgiving: "TIME description..." with no ' at ' anywhere -- find
+         the longest leading run of words that chrono_engine recognizes as
+         a time expression (status != REJECT), and treat everything after
+         it as the description. This only decides *where the time ends*;
+         it never guesses what the time itself means -- that's still fully
+         chrono_engine's job, including CLARIFY when ambiguous.
+      If neither applies, the whole message is treated as the time
+      expression (unchanged from before -- surfaces chrono_engine's REJECT
+      message as-is).
+    """
     lowered = text.lower()
     idx = lowered.rfind(" at ")
-    if idx == -1:
-        return None, text
-    description = text[:idx].strip()
-    time_part = text[idx + len(" at "):].strip()
-    return (description or None), time_part
+    if idx != -1:
+        description = text[:idx].strip()
+        time_part = text[idx + len(" at "):].strip()
+        return (description or None), time_part
+
+    words = text.split()
+    for n in range(len(words) - 1, 0, -1):
+        candidate = " ".join(words[:n])
+        if parse_time(candidate, default_tz=default_tz).status != Status.REJECT:
+            description = " ".join(words[n:]).strip()
+            return (description or None), candidate
+
+    return None, text
 
 
 def _format_reply(result, description: str | None) -> str:
@@ -92,8 +114,8 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text or ""
-    description, time_part = _split_description_and_time(text)
     default_tz = context.bot_data["default_tz"]
+    description, time_part = _split_description_and_time(text, default_tz=default_tz)
     result = parse_time(time_part, default_tz=default_tz)
     await update.message.reply_text(_format_reply(result, description))
 
