@@ -28,6 +28,8 @@ from chrono_engine.parser import parse_time
 app = Flask(__name__)
 
 
+@app.post("/")
+@app.post("/api/index")
 @app.post("/api/webhook")
 def webhook():
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != os.environ["WEBHOOK_SECRET_TOKEN"]:
