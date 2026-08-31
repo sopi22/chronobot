@@ -34,7 +34,24 @@ app = Flask(__name__)
 @app.post("/")
 @app.post("/api/index")
 @app.post("/api/webhook")
-def webhook():
+@app.post("/api/check-reminders")
+def entrypoint():
+    """Single dispatcher for both jobs this function does, deliberately not
+    branching on request.path: Vercel's rewrite ("/(.*)"  ->  "/api/index" in
+    vercel.json) routes every incoming path to whichever view function is
+    bound to "/api/index" -- confirmed via `vercel logs`, a request actually
+    sent to /api/check-reminders was logged and handled as /api/index. Two
+    separately-routed view functions would mean one of them silently never
+    runs. Branching on which credential is present (a `token` query param
+    vs. Telegram's secret-token header) works regardless of what the
+    platform does with the path, and is also literally who's calling: only
+    cron-job.org sends `token`, only Telegram sends that header."""
+    if request.args.get("token") is not None:
+        return _check_reminders()
+    return _webhook()
+
+
+def _webhook():
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != os.environ["WEBHOOK_SECRET_TOKEN"]:
         abort(403)
 
@@ -45,8 +62,7 @@ def webhook():
     return "", 200
 
 
-@app.post("/api/check-reminders")
-def check_reminders():
+def _check_reminders():
     """Fire every due reminder. Not user-facing -- meant to be hit on a
     schedule by an external trigger (e.g. cron-job.org), since Vercel's own
     Hobby-plan cron jobs only run once a day, nowhere near precise enough
