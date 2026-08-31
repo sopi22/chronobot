@@ -26,7 +26,7 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 - Description can go before or after the time — `call mom at 154` and `154 call mom` both work, `on` works the same as `at`. Only decides *where the time is*, never guesses what it means.
 - An explicit trailing `tomorrow` ("wake me up at 7am tomorrow") is understood as a date, not more unparseable text.
 - Reminders actually fire — on the Vercel deployment, a NORMALIZED/WARN time is stored and the bot messages that chat again the moment it's due, like a Telegram-native alarm. Multiple reminders are tracked independently. See "Reminders that actually message you later" below.
-- 94 passing unit tests, written before the implementation.
+- 95 passing unit tests, written before the implementation.
 
 ## Setup & run
 
@@ -70,7 +70,9 @@ docker build -t chronobot .
 docker run -d --name chronobot --env-file .env chronobot
 ```
 
-Installs `requirements.txt`, copies `chrono_engine/` and `bot/`, runs `python -m bot.bot`, with `.env` passed at run time (never baked into the image). Verified end-to-end on 2026-08-24: `docker logs chronobot` should show `Application started` after a successful `getMe` call to Telegram's API.
+Installs `requirements.txt`, copies `chrono_engine/` and `bot/`, runs `python -m bot.bot`, with `.env` passed at run time (never baked into the image). Verified end-to-end on 2026-09-01 (rebuilt against the current `requirements.txt`, including `tzdata`/`httpx`): `docker logs chronobot` should show `Application started` after a successful `getMe` call to Telegram's API.
+
+**Warning if you also have the Vercel webhook deployed:** `python-telegram-bot`'s `run_polling()` calls `deleteWebhook()` automatically on startup. Running this container against the *same bot token* as an active Vercel deployment will silently take the live webhook offline the moment the container starts — confirmed the hard way while polishing this README. Use a second, disposable bot token (a fresh `/newbot` from @BotFather) for any local/Docker testing once you have a real webhook running in production, and re-run the `setWebhook` step in "Deploying on Vercel" below if this ever happens to your real bot.
 
 ### Where this should actually run
 
@@ -131,6 +133,18 @@ You:  5pm call mom
 Bot:  ✅ 'call mom' at 17:00 (Asia/Manila)
 ```
 
+On the Vercel deployment, a NORMALIZED/WARN reply also schedules a real reminder (see "Reminders that actually message you later" above) — the confirmation gets an extra line, and a second message arrives on its own once the time comes, with no further input:
+
+```
+You:  wake me up at 7am tomorrow
+Bot:  ✅ 'wake me up' at 07:00 (Asia/Manila)
+
+      I'll message you here the moment it's time.
+
+[... next morning, unprompted ...]
+Bot:  ⏰ Reminder: wake me up
+```
+
 ## Dependencies & licenses
 
 Checked for MIT compatibility, not assumed:
@@ -139,10 +153,12 @@ Checked for MIT compatibility, not assumed:
 |---|---|---|
 | `python-telegram-bot` 21.6 | LGPL-3.0 | Yes — used as an unmodified library dependency (`pip install` + `import`, no vendored/modified source). LGPL explicitly permits this without requiring the using application to also be LGPL. |
 | `flask` 3.1.3 | BSD-3-Clause | Yes — permissive, MIT-compatible. Only used by `api/index.py` (Vercel webhook entrypoint). |
+| `tzdata` | Apache-2.0 | Yes — permissive, MIT-compatible. IANA timezone database as a pip package; only actually needed on Vercel's Python runtime, which doesn't ship the system tzdata that `zoneinfo` (`chrono_engine/dst.py`) relies on. |
+| `httpx` | BSD-3-Clause | Yes — permissive, MIT-compatible. Already pulled in transitively by `python-telegram-bot`; declared directly here because `reminders.py` also calls it explicitly, to talk to Upstash Redis's REST API. |
 | `pytest` | MIT | Yes — dev/test-only, not distributed as part of the running application either way. |
 | `python:3.12-slim` (Docker base image) | Debian/various (base OS) | Not a licensing concern — used only as a runtime environment, not incorporated into this project's source. |
 
-Transitive dependencies pulled in by `python-telegram-bot` (`httpx`, `httpcore`, `h11`, `anyio`, `certifi`, `idna`) are standard, widely-used permissive or weak-copyleft (file-level, e.g. `certifi`'s MPL-2.0) packages common throughout the Python ecosystem — spot-checked, no conflicts found.
+Remaining transitive dependencies pulled in by `python-telegram-bot` (`httpcore`, `h11`, `anyio`, `certifi`, `idna`) are standard, widely-used permissive or weak-copyleft (file-level, e.g. `certifi`'s MPL-2.0) packages common throughout the Python ecosystem — spot-checked, no conflicts found.
 
 ## License
 
