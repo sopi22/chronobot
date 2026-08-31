@@ -16,13 +16,14 @@ is the point -- these tests define the spec, not describe the code.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from chrono_engine.canonical import Status, TzPolicy
 from chrono_engine.parser import parse_time
-from chrono_engine.dst import OccurrenceStatus, resolve_weekly_occurrence
+from chrono_engine.dst import OccurrenceStatus, next_occurrence_utc, resolve_weekly_occurrence
 
 
 TZ = "Asia/Manila"  # arbitrary fixed default_tz for tests that don't care
@@ -435,3 +436,42 @@ class TestRecurringDSTTransitions:
         delta = after.instant_utc - before.instant_utc
         # 14 days minus 1 hour (lost to spring-forward), not exactly 14 days.
         assert delta.total_seconds() == 14 * 86400 - 3600
+
+
+class TestNextOccurrence:
+    """next_occurrence_utc: the "when does this one-shot reminder actually
+    fire" resolution used by the Telegram-facing reminder feature -- not
+    the recurring-series one above, so there's always exactly one right
+    answer (today or tomorrow), never a CLARIFY-worthy ambiguity."""
+
+    def test_time_later_today_fires_today(self):
+        now = datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)  # 17:00 Asia/Manila (UTC+8)
+        r = next_occurrence_utc(20, 0, "Asia/Manila", now_utc=now)  # 20:00 local, still ahead
+        assert r.status == OccurrenceStatus.OK
+        assert r.instant_utc.astimezone(timezone.utc).date() == date(2026, 6, 1)
+
+    def test_time_already_passed_today_rolls_to_tomorrow(self):
+        now = datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)  # 17:00 Asia/Manila
+        r = next_occurrence_utc(8, 0, "Asia/Manila", now_utc=now)  # 08:00 local already passed
+        assert r.status == OccurrenceStatus.OK
+        local = r.instant_utc.astimezone(ZoneInfo("Asia/Manila"))
+        assert (local.date(), local.hour, local.minute) == (date(2026, 6, 2), 8, 0)
+
+    def test_exact_current_minute_counts_as_passed_rolls_to_tomorrow(self):
+        # (hour, minute) <= now is treated as "already happened" -- a
+        # reminder for right now would otherwise fire in the past the
+        # instant this request finishes processing.
+        now = datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)  # 17:00 Asia/Manila exactly
+        r = next_occurrence_utc(17, 0, "Asia/Manila", now_utc=now)
+        local = r.instant_utc.astimezone(ZoneInfo("Asia/Manila"))
+        assert local.date() == date(2026, 6, 2)
+
+    def test_spring_forward_gap_retried_on_following_day(self):
+        # 2026-03-08 02:30 America/New_York doesn't exist (spring-forward).
+        # Unlike a recurring series, a one-shot "next" reminder has no
+        # ambiguity about which date was meant -- just try the next day.
+        now = datetime(2026, 3, 8, 6, 0, tzinfo=timezone.utc)  # before 02:30 EST that day
+        r = next_occurrence_utc(2, 30, "America/New_York", now_utc=now)
+        assert r.status == OccurrenceStatus.OK
+        local = r.instant_utc.astimezone(ZoneInfo("America/New_York"))
+        assert local.date() == date(2026, 3, 9)

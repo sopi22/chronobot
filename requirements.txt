@@ -17,3 +17,8 @@ flask==3.1.3
 # Python function runtime doesn't ship it, so ZoneInfo("Asia/Manila") etc.
 # would fail there without this explicit fallback data source.
 tzdata
+
+# BSD-3-Clause. Permissive, MIT-compatible. Already an indirect dependency
+# of python-telegram-bot (its HTTP client), declared directly here because
+# reminders.py also calls it explicitly, to talk to Upstash Redis's REST API.
+httpx

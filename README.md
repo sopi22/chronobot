@@ -23,8 +23,10 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 - Handles 12h and 24h formats, compact digits (`1354`, `154pm`), spelled-out times (`noon`, `half past two`), maritime `LT`/`Z`/`UTC` markers, locale variants (`13.54`, `13h54`), and full-width/Devanagari Unicode digits.
 - Recurring-event DST safety: occurrences are resolved against real IANA timezone data and flagged, never silently shifted, if a specific date's local time is nonexistent (spring-forward) or ambiguous (fall-back).
 - On ambiguity, the bot asks — with the concrete candidate times, not an open-ended "please clarify."
-- Description can go before or after the time — `call mom at 154` and `154 call mom` both work. Only decides *where the time is*, never guesses what it means.
-- 79 passing unit tests, written before the implementation.
+- Description can go before or after the time — `call mom at 154` and `154 call mom` both work, `on` works the same as `at`. Only decides *where the time is*, never guesses what it means.
+- An explicit trailing `tomorrow` ("wake me up at 7am tomorrow") is understood as a date, not more unparseable text.
+- Reminders actually fire — on the Vercel deployment, a NORMALIZED/WARN time is stored and the bot messages that chat again the moment it's due, like a Telegram-native alarm. Multiple reminders are tracked independently. See "Reminders that actually message you later" below.
+- 94 passing unit tests, written before the implementation.
 
 ## Setup & run
 
@@ -92,6 +94,19 @@ This uses `api/index.py` — a small Flask function, separate from `bot/bot.py` 
 5. Copy the deployment's URL (looks like `https://chronobot-<something>.vercel.app`) and tell me — I'll register it with Telegram (a one-time `setWebhook` API call) without needing the token pasted into chat, since I already have it locally in `.env`.
 
 After that, the bot responds to messages the moment Vercel receives them from Telegram — no laptop, no Docker, no polling loop required. If you ever want to go back to local testing, Telegram only allows one active mode (webhook *or* long-polling) at a time — deleting the webhook (`deleteWebhook`) switches back to `python -m bot.bot` working again, and re-registering it switches back to Vercel.
+
+### Reminders that actually message you later (Vercel deployment only)
+
+A NORMALIZED or WARN time isn't just echoed back — it's stored, and the bot messages that chat again the moment it's due ("⏰ Reminder: ..."), like a Telegram-native alarm. Say "wake me up at 7am tomorrow" now, then immediately say "remind me to check my notes on 10:15 pm" — both are tracked independently; neither has to wait for the other.
+
+This needs two extra pieces beyond the base webhook setup, since a serverless function has no memory between requests and Vercel's own free-tier cron only runs once a day (nowhere near precise enough for "at 5pm" — see [Vercel's docs](https://vercel.com/docs/cron-jobs/usage-and-pricing)):
+
+1. **Somewhere to store pending reminders** — add the **Upstash for Redis** integration from Vercel's dashboard: your project → **Storage** tab → **Browse Marketplace** → Upstash for Redis → Create (free tier: 500K commands/month). This automatically injects `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL` / `KV_REST_API_TOKEN`, depending on which product name Vercel shows) into your project's environment variables — no manual copy-paste needed on Vercel's side.
+2. **Something to check "is anything due yet?" every minute** — a free external scheduler hitting `/api/check-reminders?token=<CRON_SECRET>`:
+   - Add `CRON_SECRET` to Vercel's env vars (same value as your local `.env`'s `CRON_SECRET` — see `.env.example`).
+   - Sign up at [cron-job.org](https://cron-job.org) (free, no card) and create a job: URL = `https://<your-deployment>.vercel.app/api/check-reminders?token=<your CRON_SECRET>`, method POST, schedule every 1 minute.
+
+Once both are in place, a reminder fires within a minute of its target time, independent of whether the laptop's on, Docker's running, or you've sent any other message since.
 
 ## Example conversation
 

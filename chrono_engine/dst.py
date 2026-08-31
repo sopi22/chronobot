@@ -17,7 +17,7 @@ silently guessed; both are surfaced so the caller can CLARIFY.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import Enum
 from zoneinfo import ZoneInfo
 
@@ -81,3 +81,37 @@ def resolve_weekly_occurrence(local_date: date, hour: int, minute: int, tz_name:
         )
 
     return ResolvedOccurrence(OccurrenceStatus.OK, instant_utc=utc_fold0)
+
+
+def next_occurrence_utc(
+    hour: int,
+    minute: int,
+    tz_name: str,
+    *,
+    now_utc: datetime | None = None,
+    force_tomorrow: bool = False,
+) -> ResolvedOccurrence:
+    """Resolve the next upcoming wall-clock hour:minute in tz_name to a UTC
+    instant -- today if that time hasn't passed yet there, otherwise
+    tomorrow. For a one-shot reminder/alarm, not a recurring series: there
+    is always exactly one "next" answer, so a NONEXISTENT spring-forward
+    date is retried on the following day instead of surfaced as CLARIFY --
+    unlike resolve_weekly_occurrence, there is no ambiguity about *which*
+    date was meant.
+
+    force_tomorrow: the caller (api/index.py) detected an explicit
+    "tomorrow" in the message -- always resolve against tomorrow's date
+    regardless of whether today's occurrence of this clock time has
+    already passed, instead of guessing which day was meant.
+    """
+    now_utc = now_utc or datetime.now(_UTC)
+    tz = ZoneInfo(tz_name)
+    now_local = now_utc.astimezone(tz)
+    local_date = now_local.date()
+    if force_tomorrow or (hour, minute) <= (now_local.hour, now_local.minute):
+        local_date += timedelta(days=1)
+
+    occurrence = resolve_weekly_occurrence(local_date, hour, minute, tz_name)
+    if occurrence.status == OccurrenceStatus.NONEXISTENT:
+        return resolve_weekly_occurrence(local_date + timedelta(days=1), hour, minute, tz_name)
+    return occurrence

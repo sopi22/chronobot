@@ -22,7 +22,10 @@ import os
 from flask import Flask, abort, request
 from telegram import Bot, Update
 
-from bot.bot import ABOUT_TEXT, START_TEXT, _format_reply, _split_description_and_time
+import reminders
+from bot.bot import ABOUT_TEXT, START_TEXT, _extract_tomorrow, _format_reply, _split_description_and_time
+from chrono_engine.canonical import Status
+from chrono_engine.dst import OccurrenceStatus, next_occurrence_utc
 from chrono_engine.parser import parse_time
 
 app = Flask(__name__)
@@ -42,6 +45,27 @@ def webhook():
     return "", 200
 
 
+@app.post("/api/check-reminders")
+def check_reminders():
+    """Fire every due reminder. Not user-facing -- meant to be hit on a
+    schedule by an external trigger (e.g. cron-job.org), since Vercel's own
+    Hobby-plan cron jobs only run once a day, nowhere near precise enough
+    for "message me at 5pm"."""
+    if request.args.get("token") != os.environ["CRON_SECRET"]:
+        abort(403)
+
+    bot = Bot(os.environ["TELEGRAM_BOT_TOKEN"])
+    sent = asyncio.run(_fire_due_reminders(bot))
+    return {"sent": sent}, 200
+
+
+async def _fire_due_reminders(bot: Bot) -> int:
+    due = await reminders.pop_due_reminders()
+    for reminder in due:
+        await bot.send_message(reminder.chat_id, f"⏰ Reminder: {reminder.description}")
+    return len(due)
+
+
 async def _handle(update: Update, bot: Bot) -> None:
     text = update.message.text
     chat_id = update.message.chat_id
@@ -57,5 +81,24 @@ async def _handle(update: Update, bot: Bot) -> None:
         return
 
     description, time_part = _split_description_and_time(text, default_tz=default_tz)
+    time_part, force_tomorrow = _extract_tomorrow(time_part)
     result = parse_time(time_part, default_tz=default_tz)
-    await bot.send_message(chat_id, _format_reply(result, description))
+    reply = _format_reply(result, description)
+
+    if result.status in (Status.NORMALIZED, Status.WARN):
+        occurrence = next_occurrence_utc(
+            result.hour, result.minute, result.tz_name, force_tomorrow=force_tomorrow
+        )
+        if occurrence.status == OccurrenceStatus.OK:
+            await reminders.store_reminder(
+                reminders.Reminder(
+                    chat_id=chat_id,
+                    description=description or text,
+                    fire_at_utc=occurrence.instant_utc,
+                )
+            )
+            reply += "\n\nI'll message you here the moment it's time."
+        else:
+            reply += f"\n\n⚠️ Couldn't schedule this as a reminder: {occurrence.message}"
+
+    await bot.send_message(chat_id, reply)

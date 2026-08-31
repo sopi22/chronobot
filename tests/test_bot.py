@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from chrono_engine.canonical import Candidate, ParsedTime, Status, TzPolicy
 from chrono_engine.parser import parse_time
-from bot.bot import _format_reply, _split_description_and_time
+from bot.bot import _extract_tomorrow, _format_reply, _split_description_and_time
 
 
 class TestSplitDescriptionAndTime:
@@ -47,6 +47,44 @@ class TestSplitDescriptionAndTime:
         desc, time_part = _split_description_and_time("call mom at 5pm")
         assert desc == "call mom"
         assert time_part == "5pm"
+
+    def test_on_works_same_as_at(self):
+        desc, time_part = _split_description_and_time("remind me to check my notes on 10:15 pm")
+        assert desc == "remind me to check my notes"
+        assert time_part == "10:15 pm"
+
+    def test_rightmost_separator_wins_when_both_present(self):
+        # "on" earlier in the description shouldn't be mistaken for the
+        # time-introducing separator -- only the last "at"/"on" is.
+        desc, time_part = _split_description_and_time("put the report on my desk at 5pm")
+        assert desc == "put the report on my desk"
+        assert time_part == "5pm"
+
+
+class TestExtractTomorrow:
+    def test_strips_trailing_tomorrow(self):
+        time_part, tomorrow = _extract_tomorrow("7am tomorrow")
+        assert time_part == "7am"
+        assert tomorrow is True
+
+    def test_case_insensitive(self):
+        time_part, tomorrow = _extract_tomorrow("7am TOMORROW")
+        assert time_part == "7am"
+        assert tomorrow is True
+
+    def test_no_tomorrow_present(self):
+        time_part, tomorrow = _extract_tomorrow("7am")
+        assert time_part == "7am"
+        assert tomorrow is False
+
+    def test_tomorrow_mid_string_not_stripped(self):
+        # Only a trailing "tomorrow" is a date modifier; elsewhere in the
+        # text it's just part of the words being parsed (and chrono_engine
+        # will REJECT it as a time on its own merits, not this function's
+        # job to decide).
+        time_part, tomorrow = _extract_tomorrow("tomorrow at 7am")
+        assert time_part == "tomorrow at 7am"
+        assert tomorrow is False
 
 
 class TestFormatReply:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -55,21 +56,26 @@ def _split_description_and_time(text: str, *, default_tz: str = "UTC") -> tuple[
     """Find the time expression in a message and treat the rest as description.
 
     Two supported orders, tried in this priority:
-      1. Explicit: "description at TIME" -- split on the last literal
-         ' at ', if present. Always wins; purely syntactic, no time parsing
-         needed to find this split.
-      2. Forgiving: "TIME description..." with no ' at ' anywhere -- find
-         the longest leading run of words that chrono_engine recognizes as
-         a time expression (status != REJECT), and treat everything after
-         it as the description. This only decides *where the time ends*;
-         it never guesses what the time itself means -- that's still fully
-         chrono_engine's job, including CLARIFY when ambiguous.
+      1. Explicit: "description at/on TIME" -- split on whichever of the
+         literal separators ' at ' / ' on ' appears last, if either does.
+         Always wins; purely syntactic, no time parsing needed to find this
+         split. ' on ' is accepted alongside ' at ' since both read
+         naturally before a clock time ("remind me ... on 10pm"), and
+         picking the rightmost match (not just whichever separator is
+         checked first) keeps this order-independent.
+      2. Forgiving: "TIME description..." with no separator anywhere --
+         find the longest leading run of words that chrono_engine
+         recognizes as a time expression (status != REJECT), and treat
+         everything after it as the description. This only decides *where
+         the time ends*; it never guesses what the time itself means --
+         that's still fully chrono_engine's job, including CLARIFY when
+         ambiguous.
       If neither applies, the whole message is treated as the time
       expression (unchanged from before -- surfaces chrono_engine's REJECT
       message as-is).
     """
     lowered = text.lower()
-    idx = lowered.rfind(" at ")
+    idx = max(lowered.rfind(" at "), lowered.rfind(" on "))
     if idx != -1:
         description = text[:idx].strip()
         time_part = text[idx + len(" at "):].strip()
@@ -83,6 +89,23 @@ def _split_description_and_time(text: str, *, default_tz: str = "UTC") -> tuple[
             return (description or None), candidate
 
     return None, text
+
+
+_TRAILING_TOMORROW_RE = re.compile(r"\s+tomorrow$", re.IGNORECASE)
+
+
+def _extract_tomorrow(time_part: str) -> tuple[str, bool]:
+    """Strip a trailing "tomorrow" off a time expression, reporting whether
+    it was present. Purely syntactic, same spirit as
+    _split_description_and_time: chrono_engine still parses the remaining
+    clock-time text entirely on its own and never sees the word "tomorrow"
+    -- this only tells the reminder-scheduling caller which date was
+    explicitly meant, instead of leaving "tomorrow" in the string where it
+    would just make the whole expression unparseable."""
+    match = _TRAILING_TOMORROW_RE.search(time_part)
+    if match:
+        return time_part[: match.start()].strip(), True
+    return time_part, False
 
 
 def _format_reply(result, description: str | None) -> str:
