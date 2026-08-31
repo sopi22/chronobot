@@ -175,3 +175,31 @@ class TestCheckReminders:
             assert resp.status_code == 200
             assert resp.get_json() == {"sent": 0}
             send.assert_not_awaited()
+
+    def test_one_failed_send_does_not_block_the_rest_of_the_batch(self, client):
+        # A dead/blocked chat (or any transient Telegram API error) must not
+        # crash the whole check -- other due reminders sharing this tick
+        # still need to fire, and the reminder was already popped from
+        # storage either way, so there's nothing to retry for the failed one.
+        from reminders import Reminder
+        from datetime import datetime, timezone
+        from telegram.error import BadRequest
+
+        due = [
+            Reminder(chat_id=111, description="dead chat", fire_at_utc=datetime.now(timezone.utc)),
+            Reminder(chat_id=222, description="call mom", fire_at_utc=datetime.now(timezone.utc)),
+        ]
+        with (
+            patch(
+                "api.index.Bot.send_message",
+                new_callable=AsyncMock,
+                side_effect=[BadRequest("Chat not found"), None],
+            ) as send,
+            patch("api.index.reminders.pop_due_reminders", new_callable=AsyncMock, return_value=due),
+        ):
+            resp = self._hit(client)
+            assert resp.status_code == 200
+            # Only the successful send counts -- not a 500, not silently
+            # claiming both went out.
+            assert resp.get_json() == {"sent": 1}
+            assert send.await_count == 2

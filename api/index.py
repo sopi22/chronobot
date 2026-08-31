@@ -17,16 +17,20 @@ Vercel section -- not something this file does at import or request time.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from flask import Flask, abort, request
 from telegram import Bot, Update
+from telegram.error import TelegramError
 
 import reminders
 from bot.bot import ABOUT_TEXT, START_TEXT, _extract_tomorrow, _format_reply, _split_description_and_time
 from chrono_engine.canonical import Status
 from chrono_engine.dst import OccurrenceStatus, next_occurrence_utc
 from chrono_engine.parser import parse_time
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -76,10 +80,21 @@ def _check_reminders():
 
 
 async def _fire_due_reminders(bot: Bot) -> int:
+    """Send every popped-due reminder, isolating failures per-reminder: one
+    bad send (blocked chat, transient Telegram API error) must not abort the
+    rest of the batch -- the reminder is already popped from storage by the
+    time send is attempted either way, so there's nothing to retry for it,
+    but *other* due reminders sharing this same check-reminders tick still
+    need to go out."""
     due = await reminders.pop_due_reminders()
+    sent = 0
     for reminder in due:
-        await bot.send_message(reminder.chat_id, f"⏰ Reminder: {reminder.description}")
-    return len(due)
+        try:
+            await bot.send_message(reminder.chat_id, f"⏰ Reminder: {reminder.description}")
+            sent += 1
+        except TelegramError:
+            logger.exception("Failed to send reminder to chat_id=%s", reminder.chat_id)
+    return sent
 
 
 async def _handle(update: Update, bot: Bot) -> None:
