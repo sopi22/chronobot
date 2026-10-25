@@ -2,9 +2,17 @@
 No live Telegram connection is needed or used here."""
 from __future__ import annotations
 
+import pytest
+
 from chrono_engine.canonical import Candidate, ParsedTime, Status, TzPolicy
 from chrono_engine.parser import parse_time
-from bot.bot import _extract_tomorrow, _format_reply, _split_description_and_time
+from bot.bot import (
+    _extract_today,
+    _extract_tomorrow,
+    _format_reply,
+    _split_description_and_time,
+    _strip_hours_suffix,
+)
 
 
 class TestSplitDescriptionAndTime:
@@ -85,6 +93,30 @@ class TestExtractTomorrow:
         time_part, tomorrow = _extract_tomorrow("tomorrow at 7am")
         assert time_part == "tomorrow at 7am"
         assert tomorrow is False
+
+
+class TestExtractToday:
+    def test_strips_trailing_today(self):
+        assert _extract_today("3:48 pm today") == ("3:48 pm", True)
+
+    def test_case_insensitive(self):
+        assert _extract_today("3:48pm TODAY") == ("3:48pm", True)
+
+    def test_no_today_present(self):
+        assert _extract_today("3:48 pm") == ("3:48 pm", False)
+
+
+class TestStripHoursSuffix:
+    @pytest.mark.parametrize("raw", ["1548H", "1548h", "1548 H", "1548 hrs", "1548hr"])
+    def test_suffix_dropped(self, raw):
+        assert _strip_hours_suffix(raw) == "1548"
+
+    def test_timezone_after_suffix_kept(self):
+        assert _strip_hours_suffix("1548H LT") == "1548 LT"
+
+    def test_plain_times_untouched(self):
+        assert _strip_hours_suffix("3:48 pm") == "3:48 pm"
+        assert _strip_hours_suffix("1548") == "1548"
 
 
 class TestFormatReply:

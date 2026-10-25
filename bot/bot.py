@@ -108,6 +108,30 @@ def _extract_tomorrow(time_part: str) -> tuple[str, bool]:
     return time_part, False
 
 
+_TRAILING_TODAY_RE = re.compile(r"\s+today$", re.IGNORECASE)
+
+
+def _extract_today(time_part: str) -> tuple[str, bool]:
+    """Strip a trailing "today" off a time expression, reporting whether it
+    was present. Same idea as _extract_tomorrow: chrono_engine never sees
+    the word. The caller uses the flag to refuse (rather than silently roll
+    over to tomorrow) a "today" time that has already passed."""
+    match = _TRAILING_TODAY_RE.search(time_part)
+    if match:
+        return time_part[: match.start()].strip(), True
+    return time_part, False
+
+
+_HOURS_SUFFIX_RE = re.compile(r"^(\d{4})\s*(?:h|hr|hrs)\b", re.IGNORECASE)
+
+
+def _strip_hours_suffix(time_part: str) -> str:
+    """Accept maritime/military "1548H" / "1548 hrs" by dropping the suffix,
+    leaving plain 4-digit 24-hour time ("1548") that chrono_engine already
+    parses. Anything after the suffix (e.g. a timezone) is kept."""
+    return _HOURS_SUFFIX_RE.sub(r"\1", time_part.strip(), count=1)
+
+
 def _format_reply(result, description: str | None) -> str:
     label = f"'{description}'" if description else "That"
     if result.status == Status.NORMALIZED:

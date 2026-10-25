@@ -133,6 +133,43 @@ class TestTimeMessages:
             assert fire_local.date() > now_local.date()
 
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "remind me to re schedule my appointment at 11:59 pm today",
+            "remind me to re schedule my appointment at 2359H today",
+        ],
+    )
+    def test_today_and_hours_suffix_schedule_today(self, client, text):
+        # The exact phrasings that failed in real use on 2026-10-25.
+        # 23:59 is still ahead "today" unless the suite runs in that minute.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        with (
+            patch("api.index.Bot.send_message", new_callable=AsyncMock) as send,
+            patch("api.index.reminders.store_reminder", new_callable=AsyncMock) as store,
+        ):
+            _post(client, text)
+            send.assert_awaited_once()
+            store.assert_awaited_once()
+            reminder = store.await_args.args[0]
+            assert reminder.description == "remind me to re schedule my appointment"
+            fire_local = reminder.fire_at_utc.astimezone(ZoneInfo("Asia/Manila"))
+            assert fire_local.date() == datetime.now(ZoneInfo("Asia/Manila")).date()
+            assert (fire_local.hour, fire_local.minute) == (23, 59)
+
+    def test_today_time_already_passed_is_refused(self, client):
+        with (
+            patch("api.index.Bot.send_message", new_callable=AsyncMock) as send,
+            patch("api.index.reminders.store_reminder", new_callable=AsyncMock) as store,
+        ):
+            _post(client, "call the agent at 12:00 am today")
+            store.assert_not_awaited()
+            text = send.await_args.kwargs.get("text") or send.await_args.args[-1]
+            assert "already passed today" in text
+
+
 class TestCheckReminders:
     def _hit(self, client, token: str | None = "test-cron-secret"):
         url = "/api/check-reminders" + (f"?token={token}" if token is not None else "")

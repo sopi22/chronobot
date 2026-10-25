@@ -19,13 +19,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, request
 from telegram import Bot, Update
 from telegram.error import TelegramError
 
 import reminders
-from bot.bot import ABOUT_TEXT, START_TEXT, _extract_tomorrow, _format_reply, _split_description_and_time
+from bot.bot import (
+    ABOUT_TEXT,
+    START_TEXT,
+    _extract_today,
+    _extract_tomorrow,
+    _format_reply,
+    _split_description_and_time,
+    _strip_hours_suffix,
+)
 from chrono_engine.canonical import Status
 from chrono_engine.dst import OccurrenceStatus, next_occurrence_utc
 from chrono_engine.parser import parse_time
@@ -97,6 +107,13 @@ async def _fire_due_reminders(bot: Bot) -> int:
     return sent
 
 
+def _is_past_today(occurrence, tz_name: str) -> bool:
+    """next_occurrence_utc rolls a passed clock time over to tomorrow; for an
+    explicit "today" that rollover means the time has already passed."""
+    tz = ZoneInfo(tz_name)
+    return occurrence.instant_utc.astimezone(tz).date() != datetime.now(tz).date()
+
+
 async def _handle(update: Update, bot: Bot) -> None:
     text = update.message.text
     chat_id = update.message.chat_id
@@ -113,6 +130,8 @@ async def _handle(update: Update, bot: Bot) -> None:
 
     description, time_part = _split_description_and_time(text, default_tz=default_tz)
     time_part, force_tomorrow = _extract_tomorrow(time_part)
+    time_part, said_today = _extract_today(time_part)
+    time_part = _strip_hours_suffix(time_part)
     result = parse_time(time_part, default_tz=default_tz)
     reply = _format_reply(result, description)
 
@@ -120,7 +139,9 @@ async def _handle(update: Update, bot: Bot) -> None:
         occurrence = next_occurrence_utc(
             result.hour, result.minute, result.tz_name, force_tomorrow=force_tomorrow
         )
-        if occurrence.status == OccurrenceStatus.OK:
+        if said_today and occurrence.status == OccurrenceStatus.OK and _is_past_today(occurrence, result.tz_name):
+            reply += "\n\n⚠️ That time has already passed today, so no reminder was set. Send a later time, or say 'tomorrow'."
+        elif occurrence.status == OccurrenceStatus.OK:
             await reminders.store_reminder(
                 reminders.Reminder(
                     chat_id=chat_id,
