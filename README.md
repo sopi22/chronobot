@@ -19,14 +19,14 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 
 ## Features
 
-- Deterministic time parsing — see [`chrono_engine/`](chrono_engine/) — never silently guesses AM/PM or a timezone.
+- Predictable time parsing (the same message always gives the same answer) — see [`chrono_engine/`](chrono_engine/) — never silently guesses AM/PM or a timezone.
 - Handles 12h and 24h formats, compact digits (`1354`, `154pm`), spelled-out times (`noon`, `half past two`), maritime `LT`/`Z`/`UTC` markers, locale variants (`13.54`, `13h54`), and full-width/Devanagari Unicode digits.
 - Recurring-event DST safety: occurrences are resolved against real IANA timezone data and flagged, never silently shifted, if a specific date's local time is nonexistent (spring-forward) or ambiguous (fall-back).
 - On ambiguity, the bot asks — with the concrete candidate times, not an open-ended "please clarify."
 - Description can go before or after the time — `call mom at 154` and `154 call mom` both work, `on` works the same as `at`. Only decides *where the time is*, never guesses what it means.
 - An explicit trailing `tomorrow` ("wake me up at 7am tomorrow") is understood as a date, not more unparseable text.
 - Reminders actually fire — on the Vercel deployment, a NORMALIZED/WARN time is stored and the bot messages that chat again the moment it's due, like a Telegram-native alarm. Multiple reminders are tracked independently. See "Reminders that actually message you later" below.
-- 95 passing unit tests, written before the implementation.
+- 108 passing unit tests (the first set was written before the code).
 
 ## Setup & run
 
