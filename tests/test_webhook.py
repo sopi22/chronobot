@@ -175,6 +175,15 @@ class TestCheckReminders:
         url = "/api/check-reminders" + (f"?token={token}" if token is not None else "")
         return client.post(url)
 
+    def test_secret_in_header_works(self, client):
+        with patch("api.index.reminders.pop_due_reminders", new_callable=AsyncMock, return_value=[]):
+            resp = client.post("/api/check-reminders", headers={"Authorization": "Bearer test-cron-secret"})
+        assert resp.status_code == 200
+
+    def test_wrong_secret_in_header_rejected(self, client):
+        resp = client.post("/api/check-reminders", headers={"Authorization": "Bearer wrong"})
+        assert resp.status_code == 403
+
     def test_missing_token_rejected(self, client):
         resp = self._hit(client, token=None)
         assert resp.status_code == 403

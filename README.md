@@ -26,7 +26,7 @@ UX ideas only, no shared code: [Etar Calendar](https://github.com/Etar-Group/Eta
 - Description can go before or after the time — `call mom at 154` and `154 call mom` both work, `on` works the same as `at`. Only decides *where the time is*, never guesses what it means.
 - An explicit trailing `tomorrow` ("wake me up at 7am tomorrow") is understood as a date, not more unparseable text.
 - Reminders actually fire — on the Vercel deployment, a NORMALIZED/WARN time is stored and the bot messages that chat again the moment it's due, like a Telegram-native alarm. Multiple reminders are tracked independently. See "Reminders that actually message you later" below.
-- 113 passing unit tests (the first set was written before the code).
+- 115 passing unit tests (the first set was written before the code).
 
 ## Setup & run
 
@@ -104,9 +104,9 @@ A NORMALIZED or WARN time isn't just echoed back — it's stored, and the bot me
 This needs two extra pieces beyond the base webhook setup, since a serverless function has no memory between requests and Vercel's own free-tier cron only runs once a day (nowhere near precise enough for "at 5pm" — see [Vercel's docs](https://vercel.com/docs/cron-jobs/usage-and-pricing)):
 
 1. **Somewhere to store pending reminders** — add the **Upstash for Redis** integration from Vercel's dashboard: your project → **Storage** tab → **Browse Marketplace** → Upstash for Redis → Create (free tier: 500K commands/month). This automatically injects `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL` / `KV_REST_API_TOKEN`, depending on which product name Vercel shows) into your project's environment variables — no manual copy-paste needed on Vercel's side.
-2. **Something to check "is anything due yet?" every minute** — a free external scheduler hitting `/api/check-reminders?token=<CRON_SECRET>`:
+2. **Something to check "is anything due yet?" every minute** — a free external scheduler calling `/api/check-reminders` with the header `Authorization: Bearer <CRON_SECRET>`:
    - Add `CRON_SECRET` to Vercel's env vars (same value as your local `.env`'s `CRON_SECRET` — see `.env.example`).
-   - Sign up at [cron-job.org](https://cron-job.org) (free, no card) and create a job: URL = `https://<your-deployment>.vercel.app/api/check-reminders?token=<your CRON_SECRET>`, method POST, schedule every 1 minute.
+   - Sign up at [cron-job.org](https://cron-job.org) (free, no card) and create a job: URL = `https://<your-deployment>.vercel.app/api/check-reminders`, method POST, schedule every 1 minute. Under **Advanced** → **Headers** add `Authorization` = `Bearer <your CRON_SECRET>`. (Putting the secret in the URL as `?token=` still works, but then it shows up in Vercel's request logs, so use the header.)
 
 Once both are in place, a reminder fires within a minute of its target time, independent of whether the laptop's on, Docker's running, or you've sent any other message since.
 

@@ -17,6 +17,7 @@ Vercel section -- not something this file does at import or request time.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 from datetime import datetime
@@ -60,9 +61,20 @@ def entrypoint():
     vs. Telegram's secret-token header) works regardless of what the
     platform does with the path, and is also literally who's calling: only
     cron-job.org sends `token`, only Telegram sends that header."""
-    if request.args.get("token") is not None:
+    if _cron_credential() is not None:
         return _check_reminders()
     return _webhook()
+
+
+def _cron_credential() -> str | None:
+    """The cron secret, from an `Authorization: Bearer <secret>` header
+    (preferred: headers don't end up in request logs) or, for older
+    cron-job.org setups, a `token` query parameter (which DOES show up in
+    Vercel's request log line, so it should be moved to the header)."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[len("Bearer "):]
+    return request.args.get("token")
 
 
 def _webhook():
@@ -81,7 +93,7 @@ def _check_reminders():
     schedule by an external trigger (e.g. cron-job.org), since Vercel's own
     Hobby-plan cron jobs only run once a day, nowhere near precise enough
     for "message me at 5pm"."""
-    if request.args.get("token") != os.environ["CRON_SECRET"]:
+    if not hmac.compare_digest(_cron_credential() or "", os.environ["CRON_SECRET"]):
         abort(403)
 
     bot = Bot(os.environ["TELEGRAM_BOT_TOKEN"])
